@@ -11,11 +11,16 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Servux protocol packet handler for sending schematics to Litematica
- * Uses the correct packet format for Litematica 1.21+
+ * Uses the proper multi-packet handshake protocol
  */
 public class PacketHandler {
 
     private static final String CHANNEL = "servux:litematics";
+    private static final int PACKET_TYPE_TRANSMIT_START = 0;
+    private static final int PACKET_TYPE_TRANSMIT_DATA = 1;
+    private static final int PACKET_TYPE_TRANSMIT_END = 2;
+    private static final int CHUNK_SIZE = 32768; // 32KB chunks for data transmission
+
     private final LitematicaPlugin plugin;
 
     public PacketHandler(LitematicaPlugin plugin) {
@@ -25,68 +30,125 @@ public class PacketHandler {
     }
 
     /**
-     * Send schematic data to player via Servux protocol
+     * Send schematic data to player via Servux protocol multi-packet handshake
      */
     public void sendSchematicData(Player player, String schematicName, byte[] fileData) {
         try {
             boolean debug = plugin.getConfig().getBoolean("debug", true);
 
             if (debug) {
-                plugin.getLogger().info("[DEBUG PACKET] Sending packet to: " + player.getName());
-                plugin.getLogger().info("[DEBUG PACKET] Channel: " + CHANNEL);
+                plugin.getLogger().info("[DEBUG PACKET] Starting schematic transmission to: " + player.getName());
                 plugin.getLogger().info("[DEBUG PACKET] Schematic name: " + schematicName);
-                plugin.getLogger().info("[DEBUG PACKET] Data size: " + fileData.length + " bytes");
+                plugin.getLogger().info("[DEBUG PACKET] Total data size: " + fileData.length + " bytes");
             }
 
-            // Create message bytearray
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            DataOutputStream dos = new DataOutputStream(baos);
+            // Step 1: Send TransmitStart packet
+            sendTransmitStart(player, schematicName, fileData.length, debug);
 
-            // Write packet ID: 1 = SCHEMATIC_DOWNLOAD response
-            dos.writeByte(1);
-
-            // Write transaction ID (0 = unsolicited)
-            dos.writeInt(0);
-
-            // Write region count (1)
-            dos.writeInt(1);
-
-            // Write region X (0)
-            dos.writeInt(0);
-            // Write region Y (0)
-            dos.writeInt(0);
-            // Write region Z (0)
-            dos.writeInt(0);
-
-            // Write schematic name (UTF-8 with length prefix as short)
-            byte[] nameBytes = schematicName.getBytes(StandardCharsets.UTF_8);
-            dos.writeShort(nameBytes.length);
-            dos.write(nameBytes);
-
-            // Write file data length and data
-            dos.writeLong(fileData.length);
-            dos.write(fileData);
-
-            dos.flush();
-            byte[] message = baos.toByteArray();
-
-            if (debug) {
-                plugin.getLogger().info("[DEBUG PACKET] Message size: " + message.length + " bytes");
+            // Step 2: Send TransmitData packets (chunked)
+            int chunkCount = (int) Math.ceil((double) fileData.length / CHUNK_SIZE);
+            for (int i = 0; i < chunkCount; i++) {
+                int start = i * CHUNK_SIZE;
+                int length = Math.min(CHUNK_SIZE, fileData.length - start);
+                byte[] chunk = new byte[length];
+                System.arraycopy(fileData, start, chunk, 0, length);
+                sendTransmitData(player, i, chunk, debug);
             }
 
-            // Send via plugin messaging
-            player.sendPluginMessage(plugin, CHANNEL, message);
+            // Step 3: Send TransmitEnd packet
+            sendTransmitEnd(player, debug);
 
             if (debug) {
-                plugin.getLogger().info("[DEBUG PACKET] Packet sent successfully via plugin messaging!");
+                plugin.getLogger().info("[DEBUG PACKET] Schematic transmission completed!");
             }
 
         } catch (IOException e) {
-            plugin.getLogger().severe("Error creating packet message: " + e.getMessage());
+            plugin.getLogger().severe("Error transmitting schematic: " + e.getMessage());
             e.printStackTrace();
         } catch (Exception e) {
-            plugin.getLogger().severe("Error sending packet to player: " + e.getMessage());
+            plugin.getLogger().severe("Error during packet transmission: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Send TransmitStart packet
+     */
+    private void sendTransmitStart(Player player, String schematicName, int fileSize, boolean debug) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        // Packet type: 0 = TransmitStart
+        dos.writeByte(PACKET_TYPE_TRANSMIT_START);
+
+        // Filename
+        byte[] nameBytes = schematicName.getBytes(StandardCharsets.UTF_8);
+        dos.writeShort(nameBytes.length);
+        dos.write(nameBytes);
+
+        // File size
+        dos.writeLong(fileSize);
+
+        // Chunk count
+        int chunkCount = (int) Math.ceil((double) fileSize / CHUNK_SIZE);
+        dos.writeInt(chunkCount);
+
+        dos.flush();
+        byte[] message = baos.toByteArray();
+
+        if (debug) {
+            plugin.getLogger().info("[DEBUG PACKET] TransmitStart packet size: " + message.length + " bytes");
+        }
+
+        player.sendPluginMessage(plugin, CHANNEL, message);
+    }
+
+    /**
+     * Send TransmitData packet (chunk of schematic data)
+     */
+    private void sendTransmitData(Player player, int chunkIndex, byte[] chunkData, boolean debug) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        // Packet type: 1 = TransmitData
+        dos.writeByte(PACKET_TYPE_TRANSMIT_DATA);
+
+        // Chunk index
+        dos.writeInt(chunkIndex);
+
+        // Chunk data length
+        dos.writeInt(chunkData.length);
+
+        // Chunk data
+        dos.write(chunkData);
+
+        dos.flush();
+        byte[] message = baos.toByteArray();
+
+        if (debug) {
+            plugin.getLogger().info("[DEBUG PACKET] TransmitData packet [" + chunkIndex + "] size: " + message.length + " bytes");
+        }
+
+        player.sendPluginMessage(plugin, CHANNEL, message);
+    }
+
+    /**
+     * Send TransmitEnd packet
+     */
+    private void sendTransmitEnd(Player player, boolean debug) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        // Packet type: 2 = TransmitEnd
+        dos.writeByte(PACKET_TYPE_TRANSMIT_END);
+
+        dos.flush();
+        byte[] message = baos.toByteArray();
+
+        if (debug) {
+            plugin.getLogger().info("[DEBUG PACKET] TransmitEnd packet size: " + message.length + " bytes");
+        }
+
+        player.sendPluginMessage(plugin, CHANNEL, message);
     }
 }
