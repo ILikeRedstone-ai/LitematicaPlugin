@@ -2,6 +2,7 @@ package com.litematics.plugin.manager;
 
 import org.bukkit.entity.Player;
 import com.litematics.plugin.LitematicaPlugin;
+import com.litematics.plugin.network.PacketHandler;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -10,9 +11,11 @@ import java.io.IOException;
 public class SchematicManager {
 
     private final LitematicaPlugin plugin;
+    private final PacketHandler packetHandler;
 
     public SchematicManager(LitematicaPlugin plugin) {
         this.plugin = plugin;
+        this.packetHandler = new PacketHandler(plugin);
     }
 
     public void sendSchematicToPlayer(Player player, String fileName, String prefix) {
@@ -73,8 +76,7 @@ public class SchematicManager {
             plugin.getLogger().info("[DEBUG] File data size: " + fileData.length + " bytes");
         }
 
-        // TODO: Send custom payload packet to client
-        // For now, just log it
-        plugin.getLogger().info("Would send: " + prefixedName + " (" + fileData.length + " bytes)");
+        // Send via packet handler
+        packetHandler.sendSchematicData(player, prefixedName, fileData);
     }
 }
