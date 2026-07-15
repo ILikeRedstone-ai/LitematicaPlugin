@@ -11,12 +11,11 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Servux protocol packet handler for sending schematics to Litematica
- * Implements proper Servux packet structure for MC 1.21+
+ * Uses the correct packet format for Litematica 1.21+
  */
 public class PacketHandler {
 
     private static final String CHANNEL = "servux:litematics";
-    private static final byte PACKET_S2C_SCHEMATIC_DOWNLOAD = 1;
     private final LitematicaPlugin plugin;
 
     public PacketHandler(LitematicaPlugin plugin) {
@@ -39,20 +38,33 @@ public class PacketHandler {
                 plugin.getLogger().info("[DEBUG PACKET] Data size: " + fileData.length + " bytes");
             }
 
-            // Create message bytearray using proper Servux protocol
+            // Create message bytearray
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
 
-            // Write packet type (PACKET_S2C_SCHEMATIC_DOWNLOAD = 1)
-            dos.writeByte(PACKET_S2C_SCHEMATIC_DOWNLOAD);
+            // Write packet ID: 1 = SCHEMATIC_DOWNLOAD response
+            dos.writeByte(1);
 
-            // Write schematic name length and string
+            // Write transaction ID (0 = unsolicited)
+            dos.writeInt(0);
+
+            // Write region count (1)
+            dos.writeInt(1);
+
+            // Write region X (0)
+            dos.writeInt(0);
+            // Write region Y (0)
+            dos.writeInt(0);
+            // Write region Z (0)
+            dos.writeInt(0);
+
+            // Write schematic name (UTF-8 with length prefix as short)
             byte[] nameBytes = schematicName.getBytes(StandardCharsets.UTF_8);
-            writeVarInt(dos, nameBytes.length);
+            dos.writeShort(nameBytes.length);
             dos.write(nameBytes);
 
             // Write file data length and data
-            writeVarInt(dos, fileData.length);
+            dos.writeLong(fileData.length);
             dos.write(fileData);
 
             dos.flush();
@@ -60,7 +72,6 @@ public class PacketHandler {
 
             if (debug) {
                 plugin.getLogger().info("[DEBUG PACKET] Message size: " + message.length + " bytes");
-                plugin.getLogger().info("[DEBUG PACKET] Packet type: SCHEMATIC_DOWNLOAD (1)");
             }
 
             // Send via plugin messaging
@@ -77,17 +88,5 @@ public class PacketHandler {
             plugin.getLogger().severe("Error sending packet to player: " + e.getMessage());
             e.printStackTrace();
         }
-    }
-
-    /**
-     * Write a variable-length integer (VarInt) to the DataOutputStream
-     * This is the standard Minecraft protocol format for variable-length integers
-     */
-    private void writeVarInt(DataOutputStream dos, int value) throws IOException {
-        while ((value & 0xFFFFFF80) != 0L) {
-            dos.writeByte((value & 0x7F) | 0x80);
-            value >>>= 7;
-        }
-        dos.writeByte(value & 0x7F);
     }
 }
