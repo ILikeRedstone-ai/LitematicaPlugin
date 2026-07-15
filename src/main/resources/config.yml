@@ -1,0 +1,11 @@
+# Litematics Plugin Configuration
+# Edit this file and restart server to apply changes (no recompilation needed)
+
+# Name of the schematic file in /plugins/LitematicaPlugin/schematics/ folder
+test-schematic: "test.litematica"
+
+# Prefix to add to the schematic name when sent to client
+prefix: "Tested - "
+
+# Enable debug logging
+debug: true

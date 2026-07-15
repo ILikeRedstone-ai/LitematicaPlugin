@@ -1,0 +1,12 @@
+name: LitematicaPlugin
+version: 1.0.0
+main: com.litematics.plugin.LitematicaPlugin
+description: Schematic auto-download plugin for Paper 1.21+
+authors:
+  - ILikeRedstone-ai
+
+commands:
+  test:
+    description: Download test schematic
+    usage: /test
+    permission: litematics.test
